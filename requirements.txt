@@ -1,0 +1,8 @@
+
+streamlit
+youtube-transcript-api
+yt-dlp
+openai-whisper
+torch
+transformers
+sentencepiece
