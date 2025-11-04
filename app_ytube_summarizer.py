@@ -44,6 +44,32 @@ def fetch_transcript(video_id: str, languages=("id","en")) -> str | None:
     except (TranscriptsDisabled, NoTranscriptFound, CouldNotRetrieveTranscript):
         return None
 
+import os, urllib.request, zipfile, platform, shutil
+
+#mengatasi masalah untuk whisper tidak bisa digunakan, menggunakan path ffmpeg, download dari github dan menjalankannya
+def ensure_ffmpeg():
+    ffmpeg_dir = Path("ffmpeg/bin")
+    ffmpeg_exe = ffmpeg_dir / ("ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg")
+    if ffmpeg_exe.exists():
+        return str(ffmpeg_dir)
+    
+    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    os.makedirs("ffmpeg", exist_ok=True)
+    zip_path = "ffmpeg/ffmpeg.zip"
+    print("Downloading FFmpeg from GitHub...")
+    urllib.request.urlretrieve(url, zip_path)
+    with zipfile.ZipFile(zip_path, "r") as z:
+        z.extractall("ffmpeg/")
+    # auto-detect subfolder
+    for p in Path("ffmpeg").rglob("ffmpeg.exe"):
+        bin_dir = p.parent
+        shutil.move(str(bin_dir), "ffmpeg/bin")
+        break
+    return "ffmpeg/bin"
+
+# penggunaan di yt_dlp
+ffmpeg_path = ensure_ffmpeg()
+
 def download_audio(url: str, outdir: Path) -> Path:
     outtmpl = str(outdir / "%(id)s.%(ext)s")
     ydl_opts = {
@@ -52,6 +78,7 @@ def download_audio(url: str, outdir: Path) -> Path:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+         "ffmpeg_location": ffmpeg_path,
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
