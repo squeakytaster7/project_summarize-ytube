@@ -46,45 +46,73 @@ def fetch_transcript(video_id: str, languages=("id","en")) -> str | None:
 
 import os, urllib.request, zipfile, platform, shutil
 
-#mengatasi masalah untuk whisper tidak bisa digunakan, menggunakan path ffmpeg, download dari github dan menjalankannya
+#ffmpeg
+import os, platform, shutil, zipfile, urllib.request
+from pathlib import Path
+
 def ensure_ffmpeg():
-    ffmpeg_dir = Path("ffmpeg/bin")
-    ffmpeg_exe = ffmpeg_dir / ("ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg")
-    if ffmpeg_exe.exists():
-        return str(ffmpeg_dir)
-    
-    url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    # kalau sudah ada di PATH, pakai itu
+    if shutil.which("ffmpeg") and shutil.which("ffprobe"):
+        return None  # yt-dlp akan pakai PATH
+
+    bin_dir = Path("ffmpeg/bin")
+    ffmpeg_exe = bin_dir / ("ffmpeg.exe" if platform.system()=="Windows" else "ffmpeg")
+    ffprobe_exe = bin_dir / ("ffprobe.exe" if platform.system()=="Windows" else "ffprobe")
+    if ffmpeg_exe.exists() and ffprobe_exe.exists():
+        return str(bin_dir)
+
     os.makedirs("ffmpeg", exist_ok=True)
-    zip_path = "ffmpeg/ffmpeg.zip"
-    print("Downloading FFmpeg from GitHub...")
-    urllib.request.urlretrieve(url, zip_path)
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall("ffmpeg/")
-    # auto-detect subfolder
-    for p in Path("ffmpeg").rglob("ffmpeg.exe"):
-        bin_dir = p.parent
-        shutil.move(str(bin_dir), "ffmpeg/bin")
-        break
-    return "ffmpeg/bin"
+
+    # pilih URL build sesuai OS (contoh umum)
+    if platform.system()=="Windows":
+        url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    elif platform.system()=="Darwin":
+        # macOS bisa pakai Homebrew di dev, tapi fallback zip komunitas kalau perlu
+        url = "https://evermeet.cx/ffmpeg/getrelease/zip"  # bisa diganti mirror lain
+    else:
+        # Linux sering sudah ada 'ffmpeg' via apt; kalau tidak, sediakan zip sendiri
+        url = "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+
+    tmp = Path("ffmpeg/_dl.bin")
+    print("Mengunduh FFmpeg…")
+    urllib.request.urlretrieve(url, tmp)
+
+    # ekstrak (zip/tar.xz)
+    if str(tmp).endswith(".zip"):
+        with zipfile.ZipFile(tmp, "r") as z:
+            z.extractall("ffmpeg/_extract")
+    else:
+        import tarfile
+        with tarfile.open(tmp, "r:xz") as t:
+            t.extractall("ffmpeg/_extract")
+
+    # pindahkan binari ke ffmpeg/bin
+    for p in Path("ffmpeg/_extract").rglob("ffmpeg*"):
+        if p.is_file() and ("ffmpeg" in p.name or "ffprobe" in p.name):
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, bin_dir / p.name)
+
+    # bereskan
+    try: tmp.unlink()
+    except: pass
+
+    if ffmpeg_exe.exists() and ffprobe_exe.exists():
+        return str(bin_dir)
+    raise RuntimeError("Gagal menyiapkan FFmpeg/ffprobe.")
 
 # penggunaan di yt_dlp
-ffmpeg_path = ensure_ffmpeg()
-
-def download_audio(url: str, outdir: Path) -> Path:
-    outtmpl = str(outdir / "%(id)s.%(ext)s")
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": outtmpl,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-         "ffmpeg_location": ffmpeg_path,
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "128",
-        }],
+FFMPEG_LOCATION = ensure_ffmpeg()
+ydl_opts = {
+    "format": "bestaudio/best",
+    "outtmpl": "%(id)s.%(ext)s",
+    "quiet": True,
+    "no_warnings": True,
+    "noplaylist": True,
+    "ffmpeg_location": FFMPEG_LOCATION,  # None = pakai PATH; string = folder bin lokal
+    "postprocessors": [{"key": "FFmpegExtractAudio","preferredcodec": "mp3","preferredquality": "128"}],
     }
+
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         vid = info.get("id")
