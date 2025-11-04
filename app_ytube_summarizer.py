@@ -2,12 +2,6 @@ import re
 import tempfile
 from pathlib import Path
 
-import sys
-!{sys.executable} -m pip install youtube-transcript-api
-!{sys.executable} -m pip install yt-dlp
-!{sys.executable} -m pip install openai-whisper
-!{sys.executable} -m pip install transformers
-
 
 import streamlit as st
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound, CouldNotRetrieveTranscript
